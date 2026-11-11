@@ -96,3 +96,30 @@ class Ticket(Base):
     equipment: Mapped[Equipment] = relationship()
     requester: Mapped[User] = relationship(foreign_keys=[requester_id])
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
+    # O banco apaga o histórico junto com o chamado (ON DELETE CASCADE).
+    events: Mapped[list["TicketEvent"]] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class TicketEvent(Base):
+    """Histórico do chamado: cada linha é uma mudança de status (ou a abertura)."""
+
+    __tablename__ = "ticket_events"
+    __table_args__ = (
+        CheckConstraint(_check_in("para_status", Status), name="para_status_valido"),
+        CheckConstraint(
+            f"de_status IS NULL OR {_check_in('de_status', Status)}", name="de_status_valido"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    de_status: Mapped[str | None] = mapped_column(String(20))  # NULL = abertura do chamado
+    para_status: Mapped[str] = mapped_column(String(20))
+    comentario: Mapped[str | None] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket: Mapped[Ticket] = relationship(back_populates="events")
+    autor: Mapped[User] = relationship()
