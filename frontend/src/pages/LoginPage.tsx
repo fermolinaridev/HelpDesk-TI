@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
+import { BrandMark } from "../components/Icon";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
@@ -34,11 +35,19 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <form className="card login-card" onSubmit={handleSubmit}>
-        <h1>
-          <span aria-hidden>🛠️</span> HelpDesk TI
-        </h1>
-        <p className="muted">Chamados de TI da escola</p>
+      <section className="login-hero">
+        <p className="login-brand">
+          <BrandMark size={40} />
+          HelpDesk TI
+        </p>
+        <p className="login-pitch">
+          Projetor que não liga, internet que caiu, impressora travada: abra o chamado da sala e
+          acompanhe até resolver.
+        </p>
+      </section>
+      <form className="login-card" onSubmit={handleSubmit}>
+        <h1>Entrar</h1>
+        <p className="muted">Use o e-mail da escola.</p>
 
         <label className="field">
           <span>E-mail</span>

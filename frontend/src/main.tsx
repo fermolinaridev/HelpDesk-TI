@@ -6,6 +6,9 @@ import { BrowserRouter } from "react-router-dom";
 import { ApiError } from "./api";
 import App from "./App";
 import { AuthProvider } from "./auth";
+import "@fontsource/atkinson-hyperlegible/latin-400.css";
+import "@fontsource/atkinson-hyperlegible/latin-700.css";
+import "@fontsource-variable/bricolage-grotesque/wght.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({

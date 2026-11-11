@@ -5,9 +5,16 @@ import { Link, useParams } from "react-router-dom";
 
 import { api } from "../api";
 import { isStaff, useAuth } from "../auth";
-import { PrioridadeBadge, StatusBadge } from "../components/Badges";
+import { AssetTag, PrioridadeBadge, StatusBadge } from "../components/Badges";
+import Icon from "../components/Icon";
 import StatusActions from "../components/StatusActions";
-import { PRIORIDADE_LABEL, STATUS_LABEL, formatDateTime } from "../labels";
+import {
+  ORDEM_STATUS,
+  PRIORIDADE_LABEL,
+  STATUS_LABEL,
+  eventoLabel,
+  formatDateTime,
+} from "../labels";
 import type { Prioridade, Status, TicketDetail, TicketUpdate } from "../types";
 
 export default function TicketDetailPage() {
@@ -31,111 +38,141 @@ export default function TicketDetailPage() {
     onSuccess: aplicar,
   });
 
-  if (ticket.isPending) return <p className="muted">Carregando chamado…</p>;
+  if (ticket.isPending) return <p className="loading">Carregando chamado…</p>;
   if (ticket.error) {
     return (
-      <div className="card empty">
-        <p className="error">{ticket.error.message}</p>
-        <Link to="/">Voltar para os chamados</Link>
+      <div className="empty">
+        <p className="empty-title">{ticket.error.message}</p>
+        <Link to="/" className="btn">
+          Voltar para os chamados
+        </Link>
       </div>
     );
   }
 
   const t = ticket.data;
+  const mostrarTriagem = isStaff(user) && t.status !== "fechado";
 
   return (
     <>
       <Link to="/" className="back">
-        ← Chamados
+        <Icon name="voltar" size={18} />
+        Chamados
       </Link>
-      <div className="page-header">
-        <h1>
-          <span className="muted">#{t.id}</span> {t.titulo}
-        </h1>
-        <div className="badges">
+
+      <header className="detail-header">
+        <p className="detail-id">Chamado #{t.id}</p>
+        <h1>{t.titulo}</h1>
+        <div className="detail-badges">
           <StatusBadge status={t.status} />
           <PrioridadeBadge prioridade={t.prioridade} />
         </div>
-      </div>
+      </header>
+
+      <Progresso status={t.status} />
 
       <div className="detail-grid">
-        <div className="detail-main">
-          <section className="card">
-            <dl className="meta">
-              <div>
-                <dt>Local</dt>
-                <dd>
-                  {t.equipment.room.nome} · Bloco {t.equipment.room.bloco}
-                </dd>
-              </div>
-              <div>
-                <dt>Equipamento</dt>
-                <dd>
-                  {t.equipment.tipo} <span className="muted">({t.equipment.patrimonio})</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Solicitante</dt>
-                <dd>{t.requester.nome}</dd>
-              </div>
-              <div>
-                <dt>Responsável</dt>
-                <dd>{t.assignee?.nome ?? <span className="muted">Ninguém ainda</span>}</dd>
-              </div>
-              <div>
-                <dt>Categoria</dt>
-                <dd>{t.category?.nome ?? <span className="muted">Sem categoria</span>}</dd>
-              </div>
-              <div>
-                <dt>Aberto em</dt>
-                <dd>{formatDateTime(t.criado_em)}</dd>
-              </div>
-            </dl>
-            <h2 className="card-title">Descrição</h2>
-            <p className="descricao">{t.descricao}</p>
-          </section>
+        <section className="panel detail-info">
+          <dl className="meta">
+            <div>
+              <dt>Local</dt>
+              <dd>
+                {t.equipment.room.nome}, bloco {t.equipment.room.bloco}
+              </dd>
+            </div>
+            <div>
+              <dt>Equipamento</dt>
+              <dd className="meta-equip">
+                {t.equipment.tipo} <AssetTag patrimonio={t.equipment.patrimonio} />
+              </dd>
+            </div>
+            <div>
+              <dt>Aberto por</dt>
+              <dd>{t.requester.nome}</dd>
+            </div>
+            <div>
+              <dt>Responsável</dt>
+              <dd>{t.assignee?.nome ?? <span className="muted">Ninguém ainda</span>}</dd>
+            </div>
+            <div>
+              <dt>Categoria</dt>
+              <dd>{t.category?.nome ?? <span className="muted">A definir na triagem</span>}</dd>
+            </div>
+            <div>
+              <dt>Aberto em</dt>
+              <dd>{formatDateTime(t.criado_em)}</dd>
+            </div>
+          </dl>
+          <h2 className="panel-title">Descrição</h2>
+          <p className="descricao">{t.descricao}</p>
+        </section>
 
-          <section className="card">
-            <h2 className="card-title">Histórico</h2>
-            {events.isPending && <p className="muted">Carregando…</p>}
-            <ol className="timeline">
-              {events.data?.map((e) => (
-                <li key={e.id}>
-                  <div className="timeline-head">
-                    <strong>
-                      {e.de_status === null
-                        ? "Chamado aberto"
-                        : `${STATUS_LABEL[e.de_status]} → ${STATUS_LABEL[e.para_status]}`}
-                    </strong>
-                    <span className="muted small">
-                      {e.autor.nome} · {formatDateTime(e.criado_em)}
-                    </span>
-                  </div>
-                  {e.comentario && <p className="timeline-comment">{e.comentario}</p>}
-                </li>
-              ))}
-            </ol>
-          </section>
-        </div>
-
-        <aside className="detail-side">
-          <StatusActions
-            statusAtual={t.status}
-            transicoes={t.transicoes}
-            pending={mudarStatus.isPending}
-            error={mudarStatus.error?.message}
-            onSubmit={(status, comentario) => mudarStatus.mutate({ status, comentario })}
-          />
-          {isStaff(user) && t.status !== "fechado" && (
-            <TriageForm
-              key={`${t.prioridade}-${t.category_id}-${t.assignee_id}`}
-              ticket={t}
-              onSaved={aplicar}
+        {(t.transicoes.length > 0 || mostrarTriagem) && (
+          <aside className="detail-side">
+            <StatusActions
+              statusAtual={t.status}
+              transicoes={t.transicoes}
+              pending={mudarStatus.isPending}
+              error={mudarStatus.error?.message}
+              onSubmit={(status, comentario) => mudarStatus.mutate({ status, comentario })}
             />
-          )}
-        </aside>
+            {mostrarTriagem && (
+              <TriageForm
+                key={`${t.prioridade}-${t.category_id}-${t.assignee_id}`}
+                ticket={t}
+                onSaved={aplicar}
+              />
+            )}
+          </aside>
+        )}
+
+        <section className="panel detail-history">
+          <h2 className="panel-title">Histórico</h2>
+          {events.isPending && <p className="loading">Carregando…</p>}
+          <ol className="timeline">
+            {events.data?.map((e) => (
+              <li key={e.id} className={`s-${e.para_status}`}>
+                <p className="timeline-what">
+                  <strong>{e.autor.nome}</strong> {eventoLabel(e.de_status, e.para_status)}
+                </p>
+                <time className="timeline-when" dateTime={e.criado_em}>
+                  {formatDateTime(e.criado_em)}
+                </time>
+                {e.comentario && <p className="timeline-comment">{e.comentario}</p>}
+              </li>
+            ))}
+          </ol>
+        </section>
       </div>
     </>
+  );
+}
+
+/** As quatro etapas do fluxo, com a atual destacada. */
+function Progresso({ status }: { status: Status }) {
+  const atual = ORDEM_STATUS.indexOf(status);
+  return (
+    <ol className="progresso" aria-label="Etapas do chamado">
+      {ORDEM_STATUS.map((s, i) => {
+        const estado = i < atual ? "feito" : i === atual ? "atual" : "depois";
+        return (
+          <li
+            key={s}
+            className={`etapa etapa-${estado}`}
+            aria-current={estado === "atual" ? "step" : undefined}
+          >
+            <span className="etapa-marca" aria-hidden>
+              {estado === "feito" || (estado === "atual" && s === "fechado") ? (
+                <Icon name="check" size={14} />
+              ) : (
+                i + 1
+              )}
+            </span>
+            <span className="etapa-nome">{STATUS_LABEL[s]}</span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -171,8 +208,8 @@ function TriageForm({
   const toId = (value: string) => (value ? Number(value) : null);
 
   return (
-    <form className="card" onSubmit={handleSubmit}>
-      <h2 className="card-title">Triagem</h2>
+    <form className="panel" onSubmit={handleSubmit}>
+      <h2 className="panel-title">Triagem</h2>
       <label className="field">
         <span>Prioridade</span>
         <select value={prioridade} onChange={(e) => setPrioridade(e.target.value as Prioridade)}>
@@ -189,7 +226,7 @@ function TriageForm({
           <option value="">Sem categoria</option>
           {categories.data?.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.nome} (SLA {c.sla_horas} h)
+              {c.nome} (prazo de {c.sla_horas} h)
             </option>
           ))}
         </select>

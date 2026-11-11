@@ -24,10 +24,10 @@ export default function StatusActions({ statusAtual, transicoes, pending, error,
   const algumaExige = transicoes.some((t) => t.exige_comentario);
 
   return (
-    <section className="card">
-      <h2 className="card-title">Andamento</h2>
+    <section className="panel panel-acao">
+      <h2 className="panel-title">Andamento</h2>
       <label className="field">
-        <span>Comentário {algumaExige ? "" : "(opcional)"}</span>
+        <span>Comentário{algumaExige ? "" : " (opcional)"}</span>
         <textarea
           rows={3}
           value={comentario}
@@ -35,7 +35,7 @@ export default function StatusActions({ statusAtual, transicoes, pending, error,
           placeholder="Ex.: cabo HDMI substituído, testado com a professora."
         />
       </label>
-      <div className="actions">
+      <div className="actions actions-stack">
         {transicoes.map((t) => {
           const faltaComentario = t.exige_comentario && !texto;
           return (

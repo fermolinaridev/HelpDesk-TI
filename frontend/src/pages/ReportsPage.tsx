@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { api } from "../api";
+import { AssetTag } from "../components/Badges";
 import Bar from "../components/Bar";
 import { formatHoras, formatMes, formatPct } from "../labels";
 
@@ -15,15 +16,15 @@ function ReportCard({
   children: ReactNode;
 }) {
   return (
-    <section className="card report">
-      <h2 className="card-title">{title}</h2>
-      <p className="muted small">{subtitle}</p>
-      {children}
+    <section className="panel report">
+      <h2 className="panel-title">{title}</h2>
+      <p className="report-sub">{subtitle}</p>
+      <div className="table-wrap">{children}</div>
     </section>
   );
 }
 
-const Vazio = () => <p className="muted">Ainda não há dados.</p>;
+const Vazio = () => <p className="muted">Ainda não há chamados suficientes para este relatório.</p>;
 
 export default function ReportsPage() {
   const tempo = useQuery({ queryKey: ["report", "tempo"], queryFn: api.reports.tempoResolucao });
@@ -38,28 +39,33 @@ export default function ReportsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Relatórios</h1>
+        <div>
+          <h1>Relatórios</h1>
+          <p className="page-sub">Como a equipe de TI está dando conta dos chamados.</p>
+        </div>
       </div>
 
+      {tempo.isPending && <p className="loading">Carregando relatórios…</p>}
+      {tempo.error && <p className="error">{tempo.error.message}</p>}
       {tempo.data && (
-        <div className="kpis">
-          <div className="card kpi">
-            <span className="kpi-value">{tempo.data.geral.resolvidos}</span>
-            <span className="muted small">chamados resolvidos</span>
+        <dl className="kpis">
+          <div>
+            <dt>Chamados resolvidos</dt>
+            <dd>{tempo.data.geral.resolvidos}</dd>
           </div>
-          <div className="card kpi">
-            <span className="kpi-value">{formatHoras(tempo.data.geral.horas_media)}</span>
-            <span className="muted small">tempo médio de resolução</span>
+          <div>
+            <dt>Tempo médio até resolver</dt>
+            <dd>{formatHoras(tempo.data.geral.horas_media)}</dd>
           </div>
-          <div className="card kpi">
-            <span className="kpi-value">{formatHoras(tempo.data.geral.horas_mediana)}</span>
-            <span className="muted small">tempo mediano</span>
+          <div>
+            <dt>Tempo mediano</dt>
+            <dd>{formatHoras(tempo.data.geral.horas_mediana)}</dd>
           </div>
-          <div className="card kpi">
-            <span className="kpi-value">{formatPct(tempo.data.geral.pct_no_sla)}</span>
-            <span className="muted small">resolvidos dentro do SLA</span>
+          <div>
+            <dt>Resolvidos dentro do prazo</dt>
+            <dd>{formatPct(tempo.data.geral.pct_no_sla)}</dd>
           </div>
-        </div>
+        </dl>
       )}
 
       <div className="reports-grid">
@@ -69,15 +75,14 @@ export default function ReportsPage() {
         >
           {tempo.data?.por_categoria.length === 0 && <Vazio />}
           {!!tempo.data?.por_categoria.length && (
-            <div className="table-wrap">
-              <table className="table">
+            <table className="table">
                 <thead>
                   <tr>
                     <th>Categoria</th>
                     <th className="num">Resolvidos</th>
                     <th className="num">Média</th>
                     <th className="num">Mediana</th>
-                    <th className="num">No SLA</th>
+                    <th className="num">No prazo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -92,11 +97,10 @@ export default function ReportsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
           )}
         </ReportCard>
 
-        <ReportCard title="Equipamentos com mais chamados" subtitle="Top 10; empates dividem a posição.">
+        <ReportCard title="Equipamentos com mais chamados" subtitle="Os 10 que mais deram problema. Empatados dividem a posição.">
           {equip.data?.length === 0 && <Vazio />}
           {!!equip.data?.length && (
             <table className="table">
@@ -105,9 +109,11 @@ export default function ReportsPage() {
                   <tr key={e.equipment_id}>
                     <td className="muted num">{e.posicao}º</td>
                     <td>
-                      {e.tipo} <span className="muted small">({e.patrimonio})</span>
+                      <span className="report-equip">
+                        {e.tipo} <AssetTag patrimonio={e.patrimonio} />
+                      </span>
                       <div className="muted small">
-                        {e.sala} · Bloco {e.bloco}
+                        {e.sala}, bloco {e.bloco}
                       </div>
                     </td>
                     <td className="bar-cell">
@@ -121,7 +127,7 @@ export default function ReportsPage() {
           )}
         </ReportCard>
 
-        <ReportCard title="Chamados por sala" subtitle="Total, quantos ainda em aberto e % do total.">
+        <ReportCard title="Chamados por sala" subtitle="Total por sala, quantos ainda não foram resolvidos e a fatia de cada uma.">
           {salas.data?.length === 0 && <Vazio />}
           {!!salas.data?.length && (
             <table className="table">
@@ -130,7 +136,7 @@ export default function ReportsPage() {
                   <th>Sala</th>
                   <th />
                   <th className="num">Total</th>
-                  <th className="num">Em aberto</th>
+                  <th className="num">Pendentes</th>
                   <th className="num">%</th>
                 </tr>
               </thead>
@@ -138,7 +144,8 @@ export default function ReportsPage() {
                 {salas.data.map((s) => (
                   <tr key={s.room_id}>
                     <td>
-                      {s.sala} <span className="muted small">· Bloco {s.bloco}</span>
+                      {s.sala}
+                      <div className="muted small">Bloco {s.bloco}</div>
                     </td>
                     <td className="bar-cell">
                       <Bar value={s.chamados} max={maxSala} />

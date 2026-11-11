@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api";
+import { AssetTag } from "../components/Badges";
 
 export default function NewTicketPage() {
   const navigate = useNavigate();
@@ -38,11 +39,15 @@ export default function NewTicketPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Novo chamado</h1>
+        <div>
+          <h1>Novo chamado</h1>
+          <p className="page-sub">Conte onde está o problema e o que está acontecendo.</p>
+        </div>
       </div>
 
-      <form className="card form" onSubmit={handleSubmit}>
-        <div className="form-row">
+      <form className="form" onSubmit={handleSubmit}>
+        <fieldset className="panel">
+          <legend>Onde está o problema?</legend>
           <label className="field">
             <span>Sala</span>
             <select
@@ -56,68 +61,78 @@ export default function NewTicketPage() {
               <option value="">Selecione a sala…</option>
               {rooms.data?.map((r) => (
                 <option key={r.id} value={r.id}>
-                  Bloco {r.bloco} · {r.nome}
+                  {r.nome} (bloco {r.bloco})
                 </option>
               ))}
             </select>
+          </label>
+
+          {roomId !== null && (
+            <div className="field" role="radiogroup" aria-labelledby="equip-label">
+              <span id="equip-label">Equipamento</span>
+              {equipment.isPending && <p className="loading">Carregando equipamentos…</p>}
+              {equipment.data?.length === 0 && (
+                <p className="hint">
+                  Nenhum equipamento cadastrado nesta sala. Fale com a equipe de TI.
+                </p>
+              )}
+              <div className="equip-grid">
+                {equipment.data?.map((eq) => (
+                  <label key={eq.id} className="equip-option">
+                    <input
+                      type="radio"
+                      name="equipamento"
+                      value={eq.id}
+                      aria-label={`${eq.tipo}, patrimônio ${eq.patrimonio}`}
+                      required
+                      checked={equipmentId === eq.id}
+                      onChange={() => setEquipmentId(eq.id)}
+                    />
+                    <span className="equip-tipo">{eq.tipo}</span>
+                    <AssetTag patrimonio={eq.patrimonio} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </fieldset>
+
+        <fieldset className="panel">
+          <legend>O que está acontecendo?</legend>
+          <label className="field">
+            <span>Resumo</span>
+            <input
+              required
+              minLength={5}
+              maxLength={150}
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex.: Projetor não liga"
+            />
           </label>
 
           <label className="field">
-            <span>Equipamento</span>
-            <select
+            <span>Detalhes</span>
+            <textarea
               required
-              disabled={roomId === null}
-              value={equipmentId ?? ""}
-              onChange={(e) => setEquipmentId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">
-                {roomId === null ? "Escolha a sala primeiro" : "Selecione o equipamento…"}
-              </option>
-              {equipment.data?.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.tipo} ({eq.patrimonio})
-                </option>
-              ))}
-            </select>
-            {equipment.data?.length === 0 && (
-              <small className="muted">Nenhum equipamento cadastrado nesta sala.</small>
-            )}
+              minLength={10}
+              maxLength={5000}
+              rows={5}
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Desde quando acontece? Aparece alguma mensagem? Já tentou algo?"
+            />
           </label>
-        </div>
-
-        <label className="field">
-          <span>Título</span>
-          <input
-            required
-            minLength={5}
-            maxLength={150}
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            placeholder="Ex.: Projetor não liga"
-          />
-        </label>
-
-        <label className="field">
-          <span>Descrição</span>
-          <textarea
-            required
-            minLength={10}
-            maxLength={5000}
-            rows={5}
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            placeholder="O que aconteceu? Desde quando? Já tentou algo?"
-          />
-        </label>
+        </fieldset>
 
         {criar.error && <p className="error">{criar.error.message}</p>}
 
-        <div className="actions">
-          <button type="submit" className="btn btn-primary" disabled={criar.isPending}>
-            {criar.isPending ? "Abrindo…" : "Abrir chamado"}
-          </button>
+        <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(-1)}>
             Cancelar
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={criar.isPending}>
+            {criar.isPending ? "Abrindo…" : "Abrir chamado"}
           </button>
         </div>
       </form>

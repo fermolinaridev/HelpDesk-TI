@@ -1,17 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
 import { isStaff, useAuth } from "../auth";
-import { PrioridadeBadge, StatusBadge } from "../components/Badges";
-import { STATUS_LABEL, formatDateTime } from "../labels";
+import { AssetTag, PrioridadeBadge, StatusBadge } from "../components/Badges";
+import Icon from "../components/Icon";
+import { STATUS_LABEL, formatDateTime, formatQuando } from "../labels";
 import type { Status } from "../types";
 
 const FILTROS: (Status | null)[] = [null, "aberto", "em_atendimento", "resolvido", "fechado"];
 
 export default function TicketsPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const staff = isStaff(user);
   const [params, setParams] = useSearchParams();
   const status = (params.get("status") as Status | null) ?? null;
 
@@ -23,18 +24,28 @@ export default function TicketsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>{isStaff(user) ? "Chamados" : "Meus chamados"}</h1>
-        <Link to="/chamados/novo" className="btn btn-primary">
-          + Novo chamado
+        <div>
+          <h1>{staff ? "Chamados" : "Meus chamados"}</h1>
+          {tickets && (
+            <p className="page-sub">
+              {tickets.length === 1 ? "1 chamado" : `${tickets.length} chamados`}
+              {status && ` com status ${STATUS_LABEL[status].toLowerCase()}`}
+            </p>
+          )}
+        </div>
+        <Link to="/chamados/novo" className="btn btn-primary hide-mobile">
+          <Icon name="mais" size={18} />
+          Abrir chamado
         </Link>
       </div>
 
-      <div className="chips" role="group" aria-label="Filtrar por status">
+      <div className="segmented" role="group" aria-label="Filtrar por status">
         {FILTROS.map((f) => (
           <button
             key={f ?? "todos"}
             type="button"
-            className={f === status ? "chip chip-active" : "chip"}
+            aria-pressed={f === status}
+            className={f ? `segment segment-${f}` : "segment"}
             onClick={() => setParams(f ? { status: f } : {})}
           >
             {f ? STATUS_LABEL[f] : "Todos"}
@@ -42,56 +53,71 @@ export default function TicketsPage() {
         ))}
       </div>
 
-      {isPending && <p className="muted">Carregando chamados…</p>}
+      {isPending && <p className="loading">Carregando chamados…</p>}
       {error && <p className="error">{error.message}</p>}
+
       {tickets && tickets.length === 0 && (
-        <div className="card empty">
-          <p>Nenhum chamado {status ? `com status “${STATUS_LABEL[status]}”` : "ainda"}.</p>
+        <div className="empty">
+          <p className="empty-title">
+            {status
+              ? `Nenhum chamado ${STATUS_LABEL[status].toLowerCase()} agora.`
+              : "Nenhum chamado por aqui."}
+          </p>
+          <p>Algum equipamento com problema? Abra um chamado e a equipe de TI acompanha.</p>
+          <Link to="/chamados/novo" className="btn btn-primary">
+            Abrir chamado
+          </Link>
         </div>
       )}
 
       {tickets && tickets.length > 0 && (
-        <div className="card table-wrap">
-          <table className="table table-clickable">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Chamado</th>
-                <th>Local</th>
-                <th>Status</th>
-                <th>Prioridade</th>
-                {isStaff(user) && <th>Responsável</th>}
-                <th>Aberto em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id} onClick={() => navigate(`/chamados/${t.id}`)}>
-                  <td className="muted">{t.id}</td>
-                  <td>
-                    <Link to={`/chamados/${t.id}`} onClick={(e) => e.stopPropagation()}>
-                      {t.titulo}
-                    </Link>
-                    <div className="muted small">
-                      {t.equipment.tipo} · {t.equipment.patrimonio}
-                    </div>
-                  </td>
-                  <td>
-                    {t.equipment.room.nome}
-                    <div className="muted small">Bloco {t.equipment.room.bloco}</div>
-                  </td>
-                  <td>
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td>
-                    <PrioridadeBadge prioridade={t.prioridade} />
-                  </td>
-                  {isStaff(user) && <td>{t.assignee?.nome ?? <span className="muted">—</span>}</td>}
-                  <td className="nowrap">{formatDateTime(t.criado_em)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className={staff ? "ticket-list com-responsavel" : "ticket-list"}>
+          <div className="ticket-head" aria-hidden>
+            <span>Chamado</span>
+            <span>Local</span>
+            <span>Status</span>
+            <span>Prioridade</span>
+            {staff && <span>Responsável</span>}
+            <span className="ticket-when">Aberto</span>
+          </div>
+          <ul>
+            {tickets.map((t) => (
+              <li key={t.id} className={`ticket-row s-${t.status}`}>
+                <div className="ticket-main">
+                  <Link to={`/chamados/${t.id}`} className="ticket-title">
+                    {t.titulo}
+                  </Link>
+                  <span className="ticket-equip">
+                    <span className="ticket-id">#{t.id}</span>
+                    {t.equipment.tipo}
+                    <AssetTag patrimonio={t.equipment.patrimonio} />
+                  </span>
+                </div>
+                <span className="ticket-local">
+                  {t.equipment.room.nome}
+                  <small>Bloco {t.equipment.room.bloco}</small>
+                </span>
+                <span className="ticket-status">
+                  <StatusBadge status={t.status} />
+                </span>
+                <span className="ticket-prio">
+                  <PrioridadeBadge prioridade={t.prioridade} />
+                </span>
+                {staff && (
+                  <span className="ticket-resp">
+                    {t.assignee?.nome ?? <span className="muted">Ninguém</span>}
+                  </span>
+                )}
+                <time
+                  className="ticket-when"
+                  dateTime={t.criado_em}
+                  title={formatDateTime(t.criado_em)}
+                >
+                  {formatQuando(t.criado_em)}
+                </time>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </>
