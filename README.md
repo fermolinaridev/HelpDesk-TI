@@ -19,16 +19,53 @@ O HelpDesk TI organiza isso:
 | Fase | Entrega | Status |
 | --- | --- | --- |
 | **V1 — MVP** | CRUD de chamados, login JWT com papéis, Postgres + Alembic, Docker Compose, testes de integração e CI | ✅ |
-| **V2 — Regras e relatórios** | Fluxo de status com histórico, permissões refinadas, relatórios SQL (JOIN, GROUP BY, window functions), front simples | 🔜 |
+| **V2 — Regras e relatórios** | Fluxo de status com histórico, permissões por papel em cada transição, relatórios SQL (CTE, ROLLUP, FILTER, window functions) | ✅ |
+| **V2 — Front** | Interface web simples | 🔜 |
 | **V3 — IA e deploy** | Triagem por LLM com classificador de reserva, métrica de acerto da IA, seed fictício e deploy público | 🔜 |
 
 ### Papéis
 
 | Papel | Pode |
 | --- | --- |
-| `solicitante` (professor) | abrir chamados, ver e editar **apenas os próprios** (texto, enquanto estiver aberto) |
-| `tecnico` | ver todos os chamados, fazer a triagem (status, prioridade, categoria, responsável) |
+| `solicitante` (professor) | abrir chamados; ver e editar **apenas os próprios** (texto, enquanto estiver aberto); confirmar ou reabrir um chamado resolvido |
+| `tecnico` | ver todos os chamados, fazer a triagem (prioridade, categoria, responsável), atender e resolver; ver relatórios |
 | `admin` | tudo do técnico, mais cadastrar usuários, salas, equipamentos e categorias e excluir chamados |
+
+### Fluxo de status
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> aberto
+    aberto --> em_atendimento: equipe de TI
+    em_atendimento --> resolvido: equipe de TI (com comentário)
+    resolvido --> fechado: solicitante confirma
+    resolvido --> em_atendimento: reabertura (com comentário)
+    fechado --> [*]
+```
+
+- Um chamado **não pode** pular etapas: de `aberto` direto para `fechado` a API responde `409`.
+- Toda mudança vira uma linha em `ticket_events` (quem, quando, de/para e comentário). O status só muda por `POST /tickets/{id}/status`, nunca pelo `PATCH`, então nenhuma mudança fica sem registro.
+- Quem inicia o atendimento de um chamado sem responsável vira o responsável.
+- A linha do chamado fica travada (`SELECT ... FOR UPDATE`) durante a mudança, para que dois técnicos mexendo ao mesmo tempo não deixem o histórico inconsistente.
+- A regra fica isolada em [`app/workflow.py`](app/workflow.py), com testes de unidade próprios.
+
+### Relatórios
+
+Escritos em SQL puro em [`app/reports.py`](app/reports.py). São consultas analíticas, e lê-las como SQL é mais claro do que pelo ORM.
+
+| Rota | O que mostra | Recursos de SQL |
+| --- | --- | --- |
+| `/reports/tempo-resolucao` | Tempo médio e mediano de resolução e % dentro do SLA, por categoria e no total | CTE, `GROUP BY ROLLUP`, `PERCENTILE_CONT`, `INTERVAL` |
+| `/reports/equipamentos` | Ranking dos equipamentos com mais chamados | `JOIN`, `RANK() OVER` |
+| `/reports/salas` | Chamados por sala, quantos ainda em aberto e % do total | `LEFT JOIN`, `COUNT(*) FILTER`, `SUM() OVER ()` |
+| `/reports/mensal` | Chamados por mês, com variação e acumulado | `generate_series`, `LAG() OVER`, soma acumulada, fuso horário |
+
+Detalhes que contam:
+
+- O tempo de resolução considera a **última** resolução, então um chamado reaberto conta a resolução definitiva.
+- O mês é calculado no fuso da escola: um chamado aberto às 23h do dia 31 conta naquele mês, e não no seguinte (como aconteceria em UTC).
+- Meses sem chamados aparecem com zero.
 
 ## Stack
 
@@ -47,6 +84,8 @@ erDiagram
     rooms ||--o{ equipment : "tem"
     equipment ||--o{ tickets : "referente a"
     categories ||--o{ tickets : "classifica"
+    tickets ||--o{ ticket_events : "histórico"
+    users ||--o{ ticket_events : "autor"
 
     users {
         int id PK
@@ -83,9 +122,18 @@ erDiagram
         int assignee_id FK
         timestamptz criado_em
     }
+    ticket_events {
+        int id PK
+        int ticket_id FK
+        int user_id FK
+        string de_status
+        string para_status
+        text comentario
+        timestamptz criado_em
+    }
 ```
 
-Os valores de `papel`, `status` e `prioridade` também são validados no banco com `CHECK` constraints, e não só na API. As tabelas `ticket_events` (histórico) e `ai_predictions` (acerto da IA) entram na V2 e na V3.
+Os valores de `papel`, `status` e `prioridade` também são validados no banco com `CHECK` constraints, e não só na API. A tabela `ai_predictions` (acerto da IA) entra na V3.
 
 ## Como rodar
 
@@ -120,12 +168,14 @@ pytest
 
 Alguns casos cobertos:
 
-- **Permissão:** um solicitante não enxerga nem edita o chamado de outro (recebe 404, para não revelar que o id existe).
-- **Papéis:** só a equipe de TI faz a triagem; só o admin cadastra e exclui.
+- **Regra de negócio:** um chamado não pode ir de `aberto` direto para `fechado`; resolver e reabrir exigem comentário.
+- **Permissão:** um solicitante não enxerga, não edita e não vê o histórico do chamado de outro (recebe 404, para não revelar que o id existe).
+- **Papéis:** só a equipe de TI faz a triagem e vê relatórios; só o admin cadastra e exclui.
+- **Relatórios:** cenários com datas fixas conferem médias, mediana, SLA, empates no ranking, meses vazios e o fuso horário.
 - **Autenticação:** token expirado, token inválido ou assinado com outra chave é recusado.
 - **Validação:** o responsável precisa ser técnico ou admin; equipamento e categoria precisam existir; duplicatas retornam 409.
 
-## Endpoints (V1)
+## Endpoints
 
 | Método | Rota | Quem |
 | --- | --- | --- |
@@ -137,7 +187,10 @@ Alguns casos cobertos:
 | `GET` | `/tickets?status=&limit=&offset=` | logado (o solicitante vê só os próprios) |
 | `POST` | `/tickets` | logado |
 | `GET` / `PATCH` | `/tickets/{id}` | dono ou equipe de TI |
+| `POST` | `/tickets/{id}/status` | conforme o fluxo de status |
+| `GET` | `/tickets/{id}/events` | dono ou equipe de TI |
 | `DELETE` | `/tickets/{id}` | admin |
+| `GET` | `/reports/tempo-resolucao`, `/reports/equipamentos?limite=`, `/reports/salas`, `/reports/mensal` | equipe de TI |
 
 ## Estrutura
 
@@ -150,8 +203,10 @@ app/
   schemas.py       # validação de entrada e saída (Pydantic)
   security.py      # bcrypt e JWT
   deps.py          # usuário logado e checagem de papel
+  workflow.py      # regras do fluxo de status
+  reports.py       # relatórios em SQL
   cli.py           # comando create-admin
-  routers/         # auth, users, catalog (salas/equipamentos/categorias), tickets
+  routers/         # auth, users, catalog, tickets, reports
 alembic/           # migrações
-tests/             # testes de integração
+tests/             # testes de unidade (fluxo) e de integração (API + Postgres)
 ```
