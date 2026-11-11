@@ -16,3 +16,7 @@ htmlcov/
 
 # Ambiente
 .env
+
+# Front
+node_modules/
+dist/
