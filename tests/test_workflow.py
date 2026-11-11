@@ -9,6 +9,7 @@ from app.workflow import (
     ComentarioObrigatorio,
     TransicaoInvalida,
     TransicaoNaoPermitida,
+    transicoes_disponiveis,
     validar_transicao,
 )
 
@@ -58,3 +59,11 @@ def test_caminho_feliz_do_tecnico():
 
 def test_todo_status_tem_regra_definida():
     assert set(TRANSICOES) == set(Status)
+
+
+def test_transicoes_disponiveis_por_papel():
+    assert transicoes_disponiveis(A, Papel.SOLICITANTE) == []
+    assert transicoes_disponiveis(A, Papel.TECNICO) == [(EM, False)]
+    assert transicoes_disponiveis(EM, Papel.ADMIN) == [(R, True)]
+    assert transicoes_disponiveis(R, Papel.SOLICITANTE) == [(F, False), (EM, True)]
+    assert transicoes_disponiveis(F, Papel.ADMIN) == []

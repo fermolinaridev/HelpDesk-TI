@@ -46,6 +46,15 @@ class ComentarioObrigatorio(ErroDeFluxo):
     """A mudança exige um comentário."""
 
 
+def transicoes_disponiveis(de: Status, papel: Papel) -> list[tuple[Status, bool]]:
+    """Próximos status que o papel pode escolher, e se cada um exige comentário."""
+    return [
+        (para, (de, para) in EXIGE_COMENTARIO)
+        for para, papeis in TRANSICOES[de].items()
+        if papel in papeis
+    ]
+
+
 def validar_transicao(de: Status, para: Status, papel: Papel, comentario: str | None) -> None:
     permitidos = TRANSICOES[de].get(para)
     if permitidos is None:

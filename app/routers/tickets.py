@@ -7,12 +7,20 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.deps import AdminUser, CurrentUser, DbSession
 from app.models import Category, Equipment, Papel, Status, Ticket, TicketEvent, User
-from app.schemas import StatusChange, TicketCreate, TicketEventOut, TicketOut, TicketUpdate
+from app.schemas import (
+    StatusChange,
+    TicketCreate,
+    TicketDetailOut,
+    TicketEventOut,
+    TicketOut,
+    TicketUpdate,
+)
 from app.workflow import (
     ComentarioObrigatorio,
     ErroDeFluxo,
     TransicaoInvalida,
     TransicaoNaoPermitida,
+    transicoes_disponiveis,
     validar_transicao,
 )
 
@@ -27,6 +35,14 @@ HTTP_STATUS_DO_ERRO: dict[type[ErroDeFluxo], int] = {
     ComentarioObrigatorio: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
+# Carrega categoria, equipamento (com sala) e pessoas na mesma consulta, evitando N+1.
+RELACIONADOS = (
+    joinedload(Ticket.category),
+    joinedload(Ticket.equipment).joinedload(Equipment.room),
+    joinedload(Ticket.requester),
+    joinedload(Ticket.assignee),
+)
+
 
 def get_visible_ticket(db: Session, ticket_id: int, user: User, *, lock: bool = False) -> Ticket:
     """Busca o chamado respeitando a visibilidade do papel.
@@ -39,6 +55,17 @@ def get_visible_ticket(db: Session, ticket_id: int, user: User, *, lock: bool = 
     if ticket is None or (user.papel == Papel.SOLICITANTE and ticket.requester_id != user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Chamado não encontrado")
     return ticket
+
+
+def ticket_detail(db: Session, ticket: Ticket, user: User) -> dict:
+    """Chamado + as mudanças de status que este usuário pode fazer agora."""
+    db.expire(ticket)  # garante relacionamentos atualizados após um commit
+    detail = TicketOut.model_validate(ticket).model_dump()
+    detail["transicoes"] = [
+        {"status": para, "exige_comentario": exige}
+        for para, exige in transicoes_disponiveis(Status(ticket.status), Papel(user.papel))
+    ]
+    return detail
 
 
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED)
@@ -64,7 +91,7 @@ def list_tickets(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Sequence[Ticket]:
-    stmt = select(Ticket).order_by(Ticket.criado_em.desc(), Ticket.id.desc())
+    stmt = select(Ticket).options(*RELACIONADOS).order_by(Ticket.criado_em.desc(), Ticket.id.desc())
     if user.papel == Papel.SOLICITANTE:
         stmt = stmt.where(Ticket.requester_id == user.id)
     if status_filter is not None:
@@ -72,13 +99,13 @@ def list_tickets(
     return db.scalars(stmt.limit(limit).offset(offset)).all()
 
 
-@router.get("/{ticket_id}", response_model=TicketOut)
-def get_ticket(ticket_id: int, user: CurrentUser, db: DbSession) -> Ticket:
-    return get_visible_ticket(db, ticket_id, user)
+@router.get("/{ticket_id}", response_model=TicketDetailOut)
+def get_ticket(ticket_id: int, user: CurrentUser, db: DbSession) -> dict:
+    return ticket_detail(db, get_visible_ticket(db, ticket_id, user), user)
 
 
-@router.patch("/{ticket_id}", response_model=TicketOut)
-def update_ticket(ticket_id: int, data: TicketUpdate, user: CurrentUser, db: DbSession) -> Ticket:
+@router.patch("/{ticket_id}", response_model=TicketDetailOut)
+def update_ticket(ticket_id: int, data: TicketUpdate, user: CurrentUser, db: DbSession) -> dict:
     ticket = get_visible_ticket(db, ticket_id, user)
     changes = data.model_dump(exclude_unset=True)
 
@@ -109,11 +136,11 @@ def update_ticket(ticket_id: int, data: TicketUpdate, user: CurrentUser, db: DbS
     for field, value in changes.items():
         setattr(ticket, field, value)
     db.commit()
-    return ticket
+    return ticket_detail(db, ticket, user)
 
 
-@router.post("/{ticket_id}/status", response_model=TicketOut)
-def change_status(ticket_id: int, data: StatusChange, user: CurrentUser, db: DbSession) -> Ticket:
+@router.post("/{ticket_id}/status", response_model=TicketDetailOut)
+def change_status(ticket_id: int, data: StatusChange, user: CurrentUser, db: DbSession) -> dict:
     """Muda o status seguindo o fluxo e registra a mudança no histórico."""
     # Trava a linha: dois técnicos mudando o mesmo chamado ao mesmo tempo não geram
     # um histórico inconsistente.
@@ -143,7 +170,7 @@ def change_status(ticket_id: int, data: StatusChange, user: CurrentUser, db: DbS
         )
     )
     db.commit()
-    return ticket
+    return ticket_detail(db, ticket, user)
 
 
 @router.get("/{ticket_id}/events", response_model=list[TicketEventOut])

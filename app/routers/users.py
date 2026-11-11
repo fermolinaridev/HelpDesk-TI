@@ -3,9 +3,9 @@ from collections.abc import Sequence
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.deps import AdminUser, DbSession, commit_or_conflict
-from app.models import User
-from app.schemas import UserCreate, UserOut
+from app.deps import AdminUser, DbSession, StaffUser, commit_or_conflict
+from app.models import Papel, User
+from app.schemas import UserBrief, UserCreate, UserOut
 from app.security import hash_password
 
 router = APIRouter(prefix="/users", tags=["usuários"])
@@ -27,3 +27,10 @@ def create_user(data: UserCreate, _: AdminUser, db: DbSession) -> User:
 @router.get("", response_model=list[UserOut])
 def list_users(_: AdminUser, db: DbSession) -> Sequence[User]:
     return db.scalars(select(User).order_by(User.nome)).all()
+
+
+@router.get("/equipe", response_model=list[UserBrief])
+def list_team(_: StaffUser, db: DbSession) -> Sequence[User]:
+    """Técnicos e admins: as opções de responsável na triagem de um chamado."""
+    stmt = select(User).where(User.papel != Papel.SOLICITANTE).order_by(User.nome)
+    return db.scalars(stmt).all()

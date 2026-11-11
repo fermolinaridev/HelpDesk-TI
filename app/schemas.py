@@ -111,6 +111,19 @@ class TicketUpdate(InputModel):
         return self
 
 
+class UserBrief(ORMModel):
+    id: int
+    nome: str
+    papel: Papel
+
+
+class EquipmentDetail(ORMModel):
+    id: int
+    tipo: str
+    patrimonio: str
+    room: RoomOut
+
+
 class TicketOut(ORMModel):
     id: int
     titulo: str
@@ -122,17 +135,27 @@ class TicketOut(ORMModel):
     requester_id: int
     assignee_id: int | None
     criado_em: datetime
+    # Dados relacionados, para o front não precisar de uma requisição por chamado.
+    category: CategoryOut | None
+    equipment: EquipmentDetail
+    requester: UserBrief
+    assignee: UserBrief | None
+
+
+class TransicaoOut(BaseModel):
+    status: Status
+    exige_comentario: bool
+
+
+class TicketDetailOut(TicketOut):
+    # Mudanças de status que o usuário logado pode fazer agora. O front só mostra estes
+    # botões; a regra continua sendo validada no POST /status.
+    transicoes: list[TransicaoOut]
 
 
 class StatusChange(InputModel):
     status: Status
     comentario: str | None = Field(default=None, max_length=2000)
-
-
-class UserBrief(ORMModel):
-    id: int
-    nome: str
-    papel: Papel
 
 
 class TicketEventOut(ORMModel):

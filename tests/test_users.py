@@ -59,3 +59,15 @@ def test_admin_lista_usuarios(client, admin, tecnico, auth):
 
 def test_tecnico_nao_lista_usuarios(client, tecnico, auth):
     assert client.get("/users", headers=auth(tecnico)).status_code == 403
+
+
+def test_equipe_lista_apenas_tecnicos_e_admins(client, admin, tecnico, solicitante, auth):
+    resp = client.get("/users/equipe", headers=auth(tecnico))
+
+    assert resp.status_code == 200
+    assert {u["id"] for u in resp.json()} == {admin.id, tecnico.id}
+    assert "email" not in resp.json()[0]
+
+
+def test_solicitante_nao_lista_equipe(client, solicitante, auth):
+    assert client.get("/users/equipe", headers=auth(solicitante)).status_code == 403

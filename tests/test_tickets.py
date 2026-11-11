@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import func, select
 
 from app.models import Papel, TicketEvent
@@ -195,3 +196,52 @@ def test_admin_exclui_chamado_e_seu_historico(
 def test_tecnico_nao_exclui_chamado(client, abrir_chamado, solicitante, tecnico, auth):
     chamado = abrir_chamado(solicitante)
     assert client.delete(f"/tickets/{chamado['id']}", headers=auth(tecnico)).status_code == 403
+
+
+# --- Dados para o front ---
+
+
+def test_listagem_traz_equipamento_sala_e_pessoas(
+    client, abrir_chamado, mudar_status, solicitante, tecnico, auth
+):
+    chamado = abrir_chamado(solicitante)
+    mudar_status(chamado, "em_atendimento", tecnico)
+
+    [item] = client.get("/tickets", headers=auth(tecnico)).json()
+    assert item["equipment"]["patrimonio"] == "PAT-0001"
+    assert item["equipment"]["room"] == {"id": 1, "nome": "Sala 12", "bloco": "B"}
+    assert item["requester"]["nome"] == solicitante.nome
+    assert item["assignee"]["id"] == tecnico.id
+    assert item["category"] is None
+
+
+@pytest.mark.parametrize(
+    "papel, esperado",
+    [
+        (Papel.SOLICITANTE, []),
+        (Papel.TECNICO, [{"status": "em_atendimento", "exige_comentario": False}]),
+    ],
+)
+def test_detalhe_mostra_transicoes_do_usuario(
+    client, abrir_chamado, make_user, solicitante, auth, papel, esperado
+):
+    chamado = abrir_chamado(solicitante)
+    user = solicitante if papel == Papel.SOLICITANTE else make_user(papel)
+
+    detalhe = client.get(f"/tickets/{chamado['id']}", headers=auth(user)).json()
+    assert detalhe["transicoes"] == esperado
+
+
+def test_transicoes_de_chamado_resolvido_para_o_solicitante(
+    client, abrir_chamado, mudar_status, solicitante, tecnico, auth
+):
+    chamado = abrir_chamado(solicitante)
+    mudar_status(chamado, "em_atendimento", tecnico)
+    detalhe = mudar_status(chamado, "resolvido", tecnico, comentario="Toner trocado.")
+    assert [t["status"] for t in detalhe["transicoes"]] == ["fechado", "em_atendimento"]
+
+    detalhe = client.get(f"/tickets/{chamado['id']}", headers=auth(solicitante)).json()
+    assert detalhe["transicoes"] == [
+        {"status": "fechado", "exige_comentario": False},
+        {"status": "em_atendimento", "exige_comentario": True},
+    ]
