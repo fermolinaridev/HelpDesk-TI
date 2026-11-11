@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import auth, catalog, tickets, users
+from app.routers import auth, catalog, reports, tickets, users
 
 app = FastAPI(
     title="HelpDesk TI",
@@ -12,6 +12,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(catalog.router)
 app.include_router(tickets.router)
+app.include_router(reports.router)
 
 
 @app.get("/health", tags=["infra"])
