@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from alembic import command
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Equipment, Papel, Room, User
+from app.models import Category, Equipment, Papel, Room, User
 from app.security import create_access_token, hash_password
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -116,3 +116,47 @@ def equipamento(db: Session) -> Equipment:
     db.add_all([sala, projetor])
     db.commit()
     return projetor
+
+
+@pytest.fixture
+def categoria(db: Session) -> Category:
+    projetor = Category(nome="projetor", sla_horas=8)
+    db.add(projetor)
+    db.commit()
+    return projetor
+
+
+@pytest.fixture
+def abrir_chamado(client, auth, equipamento) -> Callable[..., dict]:
+    """Abre um chamado pela API e devolve o JSON da resposta."""
+
+    def _abrir(user: User, titulo: str = "Projetor não liga") -> dict:
+        resp = client.post(
+            "/tickets",
+            json={
+                "titulo": titulo,
+                "descricao": "O projetor da sala não liga desde a manhã.",
+                "equipment_id": equipamento.id,
+            },
+            headers=auth(user),
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    return _abrir
+
+
+@pytest.fixture
+def mudar_status(client, auth) -> Callable[..., dict]:
+    """Muda o status pela API e exige sucesso (para preparar o cenário do teste)."""
+
+    def _mudar(chamado: dict, status: str, user: User, comentario: str | None = None) -> dict:
+        resp = client.post(
+            f"/tickets/{chamado['id']}/status",
+            json={"status": status, "comentario": comentario},
+            headers=auth(user),
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    return _mudar

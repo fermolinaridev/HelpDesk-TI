@@ -1,33 +1,6 @@
-import pytest
+from sqlalchemy import func, select
 
-from app.models import Category, Papel
-
-
-@pytest.fixture
-def abrir_chamado(client, auth, equipamento):
-    def _abrir(user, titulo="Projetor não liga"):
-        resp = client.post(
-            "/tickets",
-            json={
-                "titulo": titulo,
-                "descricao": "O projetor da sala não liga desde a manhã.",
-                "equipment_id": equipamento.id,
-            },
-            headers=auth(user),
-        )
-        assert resp.status_code == 201, resp.text
-        return resp.json()
-
-    return _abrir
-
-
-@pytest.fixture
-def categoria(db):
-    projetor = Category(nome="projetor", sla_horas=8)
-    db.add(projetor)
-    db.commit()
-    return projetor
-
+from app.models import Papel, TicketEvent
 
 # --- Abertura ---
 
@@ -89,12 +62,12 @@ def test_tecnico_enxerga_todos_os_chamados(client, abrir_chamado, make_user, tec
     assert len(client.get("/tickets", headers=auth(tecnico)).json()) == 2
 
 
-def test_filtra_chamados_por_status(client, abrir_chamado, solicitante, tecnico, auth):
+def test_filtra_chamados_por_status(
+    client, abrir_chamado, mudar_status, solicitante, tecnico, auth
+):
     primeiro = abrir_chamado(solicitante, titulo="Impressora travada")
     abrir_chamado(solicitante, titulo="Som sem volume")
-    client.patch(
-        f"/tickets/{primeiro['id']}", json={"status": "em_atendimento"}, headers=auth(tecnico)
-    )
+    mudar_status(primeiro, "em_atendimento", tecnico)
 
     resp = client.get("/tickets?status=em_atendimento", headers=auth(tecnico))
     assert [t["id"] for t in resp.json()] == [primeiro["id"]]
@@ -110,18 +83,13 @@ def test_tecnico_faz_triagem_do_chamado(
 
     resp = client.patch(
         f"/tickets/{chamado['id']}",
-        json={
-            "status": "em_atendimento",
-            "prioridade": "alta",
-            "category_id": categoria.id,
-            "assignee_id": tecnico.id,
-        },
+        json={"prioridade": "alta", "category_id": categoria.id, "assignee_id": tecnico.id},
         headers=auth(tecnico),
     )
 
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["status"], body["prioridade"]) == ("em_atendimento", "alta")
+    assert body["prioridade"] == "alta"
     assert (body["category_id"], body["assignee_id"]) == (categoria.id, tecnico.id)
 
 
@@ -141,22 +109,47 @@ def test_categoria_inexistente_retorna_422(client, abrir_chamado, solicitante, t
     assert resp.status_code == 422
 
 
-def test_status_nulo_retorna_422(client, abrir_chamado, solicitante, tecnico, auth):
+def test_prioridade_nula_retorna_422(client, abrir_chamado, solicitante, tecnico, auth):
     chamado = abrir_chamado(solicitante)
-    resp = client.patch(f"/tickets/{chamado['id']}", json={"status": None}, headers=auth(tecnico))
+    resp = client.patch(
+        f"/tickets/{chamado['id']}", json={"prioridade": None}, headers=auth(tecnico)
+    )
     assert resp.status_code == 422
 
 
-def test_solicitante_nao_altera_status(client, abrir_chamado, solicitante, auth):
+def test_patch_nao_aceita_status(client, abrir_chamado, solicitante, tecnico, auth):
+    """O status só muda pelo endpoint do fluxo, que grava o histórico."""
     chamado = abrir_chamado(solicitante)
     resp = client.patch(
-        f"/tickets/{chamado['id']}", json={"status": "resolvido"}, headers=auth(solicitante)
+        f"/tickets/{chamado['id']}", json={"status": "fechado"}, headers=auth(tecnico)
+    )
+    assert resp.status_code == 422
+
+
+def test_solicitante_nao_faz_triagem(client, abrir_chamado, solicitante, auth):
+    chamado = abrir_chamado(solicitante)
+    resp = client.patch(
+        f"/tickets/{chamado['id']}", json={"prioridade": "critica"}, headers=auth(solicitante)
     )
     assert resp.status_code == 403
 
 
+def test_chamado_fechado_nao_pode_ser_alterado(
+    client, abrir_chamado, mudar_status, solicitante, tecnico, auth
+):
+    chamado = abrir_chamado(solicitante)
+    mudar_status(chamado, "em_atendimento", tecnico)
+    mudar_status(chamado, "resolvido", tecnico, comentario="Cabo HDMI trocado.")
+    mudar_status(chamado, "fechado", solicitante)
+
+    resp = client.patch(
+        f"/tickets/{chamado['id']}", json={"prioridade": "baixa"}, headers=auth(tecnico)
+    )
+    assert resp.status_code == 409
+
+
 def test_solicitante_edita_descricao_enquanto_aberto(
-    client, abrir_chamado, solicitante, tecnico, auth
+    client, abrir_chamado, mudar_status, solicitante, tecnico, auth
 ):
     chamado = abrir_chamado(solicitante)
     url = f"/tickets/{chamado['id']}"
@@ -167,7 +160,7 @@ def test_solicitante_edita_descricao_enquanto_aberto(
         == (nova["descricao"])
     )
 
-    client.patch(url, json={"status": "em_atendimento"}, headers=auth(tecnico))
+    mudar_status(chamado, "em_atendimento", tecnico)
     assert client.patch(url, json=nova, headers=auth(solicitante)).status_code == 409
 
 
@@ -186,12 +179,17 @@ def test_solicitante_nao_edita_chamado_de_outro(client, abrir_chamado, make_user
 # --- Exclusão ---
 
 
-def test_admin_exclui_chamado(client, abrir_chamado, solicitante, admin, auth):
+def test_admin_exclui_chamado_e_seu_historico(
+    client, db, abrir_chamado, mudar_status, solicitante, tecnico, admin, auth
+):
     chamado = abrir_chamado(solicitante)
+    mudar_status(chamado, "em_atendimento", tecnico)
     url = f"/tickets/{chamado['id']}"
 
     assert client.delete(url, headers=auth(admin)).status_code == 204
     assert client.get(url, headers=auth(admin)).status_code == 404
+    restantes = db.scalar(select(func.count()).select_from(TicketEvent))
+    assert restantes == 0
 
 
 def test_tecnico_nao_exclui_chamado(client, abrir_chamado, solicitante, tecnico, auth):

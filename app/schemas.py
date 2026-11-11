@@ -12,7 +12,9 @@ class ORMModel(BaseModel):
 
 class InputModel(BaseModel):
     # Enums viram strings simples ao chegar no banco ('aberto', não Status.ABERTO).
-    model_config = ConfigDict(use_enum_values=True, str_strip_whitespace=True)
+    # extra="forbid": campo desconhecido (ou proibido, como status no PATCH) vira 422, e não
+    # é ignorado em silêncio.
+    model_config = ConfigDict(use_enum_values=True, str_strip_whitespace=True, extra="forbid")
 
 
 # --- Auth / usuários ---
@@ -88,11 +90,14 @@ class TicketCreate(InputModel):
 
 
 class TicketUpdate(InputModel):
-    """Campos opcionais: só o que vier no corpo é alterado."""
+    """Campos opcionais: só o que vier no corpo é alterado.
+
+    O status não muda por aqui, e sim em POST /tickets/{id}/status, que valida o fluxo
+    e grava o histórico.
+    """
 
     titulo: str | None = Field(default=None, min_length=5, max_length=150)
     descricao: str | None = Field(default=None, min_length=10, max_length=5000)
-    status: Status | None = None
     prioridade: Prioridade | None = None
     category_id: int | None = None
     assignee_id: int | None = None
@@ -100,7 +105,7 @@ class TicketUpdate(InputModel):
     @model_validator(mode="after")
     def _campos_obrigatorios_nao_nulos(self) -> Self:
         # category_id e assignee_id aceitam null (remover categoria/responsável); os demais não.
-        for campo in ("titulo", "descricao", "status", "prioridade"):
+        for campo in ("titulo", "descricao", "prioridade"):
             if campo in self.model_fields_set and getattr(self, campo) is None:
                 raise ValueError(f"'{campo}' não pode ser nulo")
         return self
@@ -117,3 +122,65 @@ class TicketOut(ORMModel):
     requester_id: int
     assignee_id: int | None
     criado_em: datetime
+
+
+class StatusChange(InputModel):
+    status: Status
+    comentario: str | None = Field(default=None, max_length=2000)
+
+
+class UserBrief(ORMModel):
+    id: int
+    nome: str
+    papel: Papel
+
+
+class TicketEventOut(ORMModel):
+    id: int
+    de_status: Status | None
+    para_status: Status
+    comentario: str | None
+    criado_em: datetime
+    autor: UserBrief
+
+
+# --- Relatórios ---
+
+
+class TempoResolucao(BaseModel):
+    categoria: str
+    resolvidos: int
+    horas_media: float | None
+    horas_mediana: float | None
+    pct_no_sla: float | None
+
+
+class TempoResolucaoOut(BaseModel):
+    geral: TempoResolucao
+    por_categoria: list[TempoResolucao]
+
+
+class EquipamentoRanking(BaseModel):
+    posicao: int
+    equipment_id: int
+    tipo: str
+    patrimonio: str
+    sala: str
+    bloco: str
+    chamados: int
+
+
+class ChamadosPorSala(BaseModel):
+    room_id: int
+    bloco: str
+    sala: str
+    chamados: int
+    em_aberto: int
+    pct_do_total: float | None
+
+
+class ChamadosPorMes(BaseModel):
+    mes: str  # AAAA-MM
+    chamados: int
+    variacao: int | None  # diferença para o mês anterior
+    acumulado: int
