@@ -1,0 +1,18 @@
+# Arquivos do Claude Code (não versionar)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+graphify-out/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Ambiente
+.env

@@ -1,0 +1,20 @@
+[project]
+name = "helpdesk-ti"
+version = "0.1.0"
+description = "Sistema de chamados de TI para escolas, com triagem automática por IA."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# conftest precisa definir DATABASE_URL antes de importar o app.
+"tests/conftest.py" = ["E402"]
