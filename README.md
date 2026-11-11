@@ -20,7 +20,7 @@ O HelpDesk TI organiza isso:
 | --- | --- | --- |
 | **V1 — MVP** | CRUD de chamados, login JWT com papéis, Postgres + Alembic, Docker Compose, testes de integração e CI | ✅ |
 | **V2 — Regras e relatórios** | Fluxo de status com histórico, permissões por papel em cada transição, relatórios SQL (CTE, ROLLUP, FILTER, window functions) | ✅ |
-| **V2 — Front** | Interface web simples | 🔜 |
+| **V2 — Front** | Interface em React: chamados, abertura, detalhe com histórico, triagem e relatórios | ✅ |
 | **V3 — IA e deploy** | Triagem por LLM com classificador de reserva, métrica de acerto da IA, seed fictício e deploy público | 🔜 |
 
 ### Papéis
@@ -73,7 +73,9 @@ Detalhes que contam:
 - **PostgreSQL 17** + **SQLAlchemy 2** + **Alembic** (migrações)
 - **JWT** (PyJWT) e senhas com **bcrypt**
 - **pytest** com testes de integração contra Postgres real
-- **Docker Compose** e **GitHub Actions** (lint, testes e checagem de migrações)
+- **React 19** + **TypeScript** + **Vite**, com **TanStack Query** e **React Router**; testes com **Vitest** e **Testing Library**
+- **nginx** servindo o front e repassando `/api` para a API (mesma origem, sem CORS)
+- **Docker Compose** e **GitHub Actions** (lint, testes, checagem de migrações e build do front)
 
 ## Modelo de dados
 
@@ -143,15 +145,30 @@ Pré-requisito: Docker.
 docker compose up -d --build
 ```
 
-A API sobe em http://localhost:8000. A documentação interativa (Swagger) fica em http://localhost:8000/docs. As migrações rodam automaticamente na subida.
+| Serviço | Endereço |
+| --- | --- |
+| Interface web | http://localhost:8080 |
+| API | http://localhost:8000 (Swagger em `/docs`) |
 
-Crie o primeiro admin (a senha é pedida no terminal):
+As migrações rodam automaticamente na subida. Crie o primeiro admin (a senha é pedida no terminal):
 
 ```bash
 docker compose exec api python -m app.cli create-admin --nome "Admin" --email admin@escola.example.com
 ```
 
-Depois, faça login em `POST /auth/login` (o campo `username` recebe o e-mail) ou pelo botão **Authorize** do Swagger.
+Salas, equipamentos, categorias e usuários são cadastrados pela API (Swagger, com o botão **Authorize**). Na V3, um seed com dados fictícios vai preencher tudo de uma vez.
+
+### Front em modo de desenvolvimento
+
+Com a API rodando, o Vite sobe com recarga automática e repassa `/api` para `localhost:8000`:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+O front fica em http://localhost:5173.
 
 ## Testes
 
@@ -172,6 +189,11 @@ Alguns casos cobertos:
 - **Permissão:** um solicitante não enxerga, não edita e não vê o histórico do chamado de outro (recebe 404, para não revelar que o id existe).
 - **Papéis:** só a equipe de TI faz a triagem e vê relatórios; só o admin cadastra e exclui.
 - **Relatórios:** cenários com datas fixas conferem médias, mediana, SLA, empates no ranking, meses vazios e o fuso horário.
+
+No front (`cd frontend && npm test`):
+
+- O login mostra o erro da API e guarda o token.
+- Os botões de andamento só aparecem para as mudanças permitidas, e resolver ou reabrir só é liberado depois que o comentário é escrito.
 - **Autenticação:** token expirado, token inválido ou assinado com outra chave é recusado.
 - **Validação:** o responsável precisa ser técnico ou admin; equipamento e categoria precisam existir; duplicatas retornam 409.
 
@@ -182,11 +204,12 @@ Alguns casos cobertos:
 | `POST` | `/auth/login` | público |
 | `GET` | `/auth/me` | logado |
 | `GET` / `POST` | `/users` | admin |
+| `GET` | `/users/equipe` | equipe de TI (opções de responsável) |
 | `GET` | `/rooms`, `/equipment?room_id=`, `/categories` | logado |
 | `POST` | `/rooms`, `/equipment`, `/categories` | admin |
 | `GET` | `/tickets?status=&limit=&offset=` | logado (o solicitante vê só os próprios) |
 | `POST` | `/tickets` | logado |
-| `GET` / `PATCH` | `/tickets/{id}` | dono ou equipe de TI |
+| `GET` / `PATCH` | `/tickets/{id}` | dono ou equipe de TI (o `GET` inclui as mudanças de status que o usuário pode fazer) |
 | `POST` | `/tickets/{id}/status` | conforme o fluxo de status |
 | `GET` | `/tickets/{id}/events` | dono ou equipe de TI |
 | `DELETE` | `/tickets/{id}` | admin |
@@ -209,4 +232,11 @@ app/
   routers/         # auth, users, catalog, tickets, reports
 alembic/           # migrações
 tests/             # testes de unidade (fluxo) e de integração (API + Postgres)
+frontend/
+  src/
+    api.ts         # cliente HTTP (token, erros, 401)
+    auth.tsx       # sessão do usuário
+    pages/         # login, chamados, novo chamado, detalhe, relatórios
+    components/    # layout, badges, ações de status, barras
+  nginx.conf       # serve o build e repassa /api para a API
 ```
