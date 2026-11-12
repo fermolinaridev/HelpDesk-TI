@@ -7,4 +7,6 @@
 .pytest_cache
 .ruff_cache
 tests
-frontend
+# O Dockerfile.deploy compila o front; as dependências e o build local ficam de fora.
+frontend/node_modules
+frontend/dist

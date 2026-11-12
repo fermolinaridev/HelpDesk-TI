@@ -72,3 +72,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  deploy-image:
+    name: Imagem de deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build do Dockerfile.deploy (API + front)
+        run: docker build -f Dockerfile.deploy -t helpdesk-ti .

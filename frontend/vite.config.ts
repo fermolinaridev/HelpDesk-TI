@@ -9,7 +9,7 @@ export default defineConfig({
     // origem, não é preciso configurar CORS. Em produção o nginx faz o mesmo papel.
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: process.env.API_URL ?? "http://localhost:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
