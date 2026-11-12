@@ -22,6 +22,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://helpdesk:helpdesk@db:5432/helpdesk
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-troque-em-producao-0123456789}
+      # Opcional: sem chave, a triagem usa só o classificador por palavras-chave.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TRIAGE_MODEL: ${TRIAGE_MODEL:-claude-opus-5-5}
     ports:
       - "8000:8000"
     depends_on:

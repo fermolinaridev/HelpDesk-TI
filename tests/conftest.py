@@ -27,6 +27,7 @@ from app.database import Base, SessionLocal, engine
 from app.main import app
 from app.models import Category, Equipment, Papel, Room, User
 from app.security import create_access_token, hash_password
+from app.triage import Triagem, get_triagem
 
 ROOT = Path(__file__).resolve().parent.parent
 SENHA_PADRAO = "senha-segura-123"
@@ -54,6 +55,17 @@ def _clean_tables() -> Iterator[None]:
 def db() -> Iterator[Session]:
     with SessionLocal() as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def _sem_api_de_ia() -> Iterator[None]:
+    """Nenhum teste chama a API do modelo de verdade: por padrão, só as regras de reserva.
+
+    Os testes de triagem trocam este dublê pelo deles.
+    """
+    app.dependency_overrides[get_triagem] = lambda: Triagem(llm=None)
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture

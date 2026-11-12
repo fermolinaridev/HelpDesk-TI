@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.deps import AdminUser, CurrentUser, DbSession
@@ -15,6 +15,7 @@ from app.schemas import (
     TicketOut,
     TicketUpdate,
 )
+from app.triage import Triagem, get_triagem, triar_em_segundo_plano
 from app.workflow import (
     ComentarioObrigatorio,
     ErroDeFluxo,
@@ -65,11 +66,36 @@ def ticket_detail(db: Session, ticket: Ticket, user: User) -> dict:
         {"status": para, "exige_comentario": exige}
         for para, exige in transicoes_disponiveis(Status(ticket.status), Papel(user.papel))
     ]
+    if user.papel != Papel.SOLICITANTE:
+        detail["sugestao_ia"] = ticket.prediction
     return detail
 
 
+TRIAGEM_CAMPOS = {"prioridade", "category_id"}
+
+
+def registrar_avaliacao(db: Session, ticket: Ticket, user: User) -> None:
+    """Guarda a decisão da equipe ao lado da sugestão da IA, para medir o acerto.
+
+    Vale a última triagem: se o técnico corrigir de novo, o "final" acompanha.
+    """
+    prediction = ticket.prediction
+    if prediction is None:
+        return
+    prediction.categoria_final_id = ticket.category_id
+    prediction.prioridade_final = ticket.prioridade
+    prediction.avaliado_por_id = user.id
+    prediction.avaliado_em = func.now()
+
+
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED)
-def create_ticket(data: TicketCreate, user: CurrentUser, db: DbSession) -> Ticket:
+def create_ticket(
+    data: TicketCreate,
+    user: CurrentUser,
+    db: DbSession,
+    tarefas: BackgroundTasks,
+    triagem: Annotated[Triagem, Depends(get_triagem)],
+) -> Ticket:
     if db.get(Equipment, data.equipment_id) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Equipamento não encontrado")
 
@@ -80,6 +106,8 @@ def create_ticket(data: TicketCreate, user: CurrentUser, db: DbSession) -> Ticke
     db.add(ticket)
     db.commit()
     db.refresh(ticket)  # carrega criado_em, preenchido pelo banco
+    # A IA analisa depois da resposta: quem abre o chamado não espera pela API do modelo.
+    tarefas.add_task(triar_em_segundo_plano, ticket.id, triagem)
     return ticket
 
 
@@ -135,6 +163,8 @@ def update_ticket(ticket_id: int, data: TicketUpdate, user: CurrentUser, db: DbS
 
     for field, value in changes.items():
         setattr(ticket, field, value)
+    if changes.keys() & TRIAGEM_CAMPOS:
+        registrar_avaliacao(db, ticket, user)
     db.commit()
     return ticket_detail(db, ticket, user)
 

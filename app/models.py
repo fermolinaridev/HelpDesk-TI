@@ -13,6 +13,11 @@ class Papel(StrEnum):
     ADMIN = "admin"
 
 
+class FonteIA(StrEnum):
+    LLM = "llm"  # sugestão do modelo de linguagem
+    REGRAS = "regras"  # classificador de reserva por palavras-chave
+
+
 class Status(StrEnum):
     ABERTO = "aberto"
     EM_ATENDIMENTO = "em_atendimento"
@@ -100,6 +105,9 @@ class Ticket(Base):
     events: Mapped[list["TicketEvent"]] = relationship(
         back_populates="ticket", cascade="all, delete-orphan", passive_deletes=True
     )
+    prediction: Mapped["AIPrediction | None"] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class TicketEvent(Base):
@@ -123,3 +131,43 @@ class TicketEvent(Base):
 
     ticket: Mapped[Ticket] = relationship(back_populates="events")
     autor: Mapped[User] = relationship()
+
+
+class AIPrediction(Base):
+    """Sugestão de triagem da IA para um chamado e o que a equipe de TI decidiu depois.
+
+    A sugestão nunca altera o chamado sozinha: o técnico confirma ou corrige na triagem.
+    Comparar o sugerido com o final (categoria_final_id, prioridade_final) dá a taxa de acerto.
+    """
+
+    __tablename__ = "ai_predictions"
+    __table_args__ = (
+        CheckConstraint(_check_in("fonte", FonteIA), name="fonte_valida"),
+        CheckConstraint(
+            _check_in("prioridade_sugerida", Prioridade), name="prioridade_sugerida_valida"
+        ),
+        CheckConstraint(
+            f"prioridade_final IS NULL OR {_check_in('prioridade_final', Prioridade)}",
+            name="prioridade_final_valida",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), unique=True
+    )
+    fonte: Mapped[str] = mapped_column(String(10))
+    modelo: Mapped[str | None] = mapped_column(String(60))
+    categoria_sugerida_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    prioridade_sugerida: Mapped[str] = mapped_column(String(10))
+    justificativa: Mapped[str] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Preenchidos quando a equipe de TI faz a triagem do chamado.
+    categoria_final_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    prioridade_final: Mapped[str | None] = mapped_column(String(10))
+    avaliado_por_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    avaliado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    ticket: Mapped[Ticket] = relationship(back_populates="prediction")
+    categoria_sugerida: Mapped[Category | None] = relationship(foreign_keys=[categoria_sugerida_id])

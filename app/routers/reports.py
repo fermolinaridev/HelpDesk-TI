@@ -4,7 +4,13 @@ from fastapi import APIRouter, Query
 
 from app import reports
 from app.deps import DbSession, StaffUser
-from app.schemas import ChamadosPorMes, ChamadosPorSala, EquipamentoRanking, TempoResolucaoOut
+from app.schemas import (
+    AcertoIAOut,
+    ChamadosPorMes,
+    ChamadosPorSala,
+    EquipamentoRanking,
+    TempoResolucaoOut,
+)
 
 router = APIRouter(prefix="/reports", tags=["relatórios"])
 
@@ -33,3 +39,9 @@ def salas(_: StaffUser, db: DbSession) -> list[dict[str, Any]]:
 def mensal(_: StaffUser, db: DbSession) -> list[dict[str, Any]]:
     """Chamados abertos por mês, com variação e acumulado."""
     return reports.chamados_por_mes(db)
+
+
+@router.get("/ia", response_model=AcertoIAOut)
+def ia(_: StaffUser, db: DbSession) -> dict[str, Any]:
+    """Taxa de acerto da triagem por IA, por fonte (modelo ou regras de reserva)."""
+    return reports.acerto_ia(db)

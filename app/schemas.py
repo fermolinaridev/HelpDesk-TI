@@ -3,7 +3,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.models import Papel, Prioridade, Status
+from app.models import FonteIA, Papel, Prioridade, Status
 
 
 class ORMModel(BaseModel):
@@ -147,10 +147,24 @@ class TransicaoOut(BaseModel):
     exige_comentario: bool
 
 
+class SugestaoIAOut(ORMModel):
+    """Sugestão de triagem da IA (só a equipe de TI vê)."""
+
+    fonte: FonteIA
+    modelo: str | None
+    categoria_sugerida: CategoryOut | None
+    prioridade_sugerida: Prioridade
+    justificativa: str
+    criado_em: datetime
+    avaliado_em: datetime | None
+
+
 class TicketDetailOut(TicketOut):
     # Mudanças de status que o usuário logado pode fazer agora. O front só mostra estes
     # botões; a regra continua sendo validada no POST /status.
     transicoes: list[TransicaoOut]
+    # None enquanto a IA ainda não analisou o chamado, ou para o solicitante.
+    sugestao_ia: SugestaoIAOut | None = None
 
 
 class StatusChange(InputModel):
@@ -207,3 +221,24 @@ class ChamadosPorMes(BaseModel):
     chamados: int
     variacao: int | None  # diferença para o mês anterior
     acumulado: int
+
+
+class AcertoIA(BaseModel):
+    fonte: str  # "llm", "regras" ou "todas"
+    sugestoes: int
+    avaliadas: int
+    pct_categoria: float | None
+    pct_prioridade: float | None
+    pct_ambos: float | None
+
+
+class CorrecaoIA(BaseModel):
+    sugerida: str
+    final: str
+    vezes: int
+
+
+class AcertoIAOut(BaseModel):
+    geral: AcertoIA
+    por_fonte: list[AcertoIA]
+    correcoes: list[CorrecaoIA]

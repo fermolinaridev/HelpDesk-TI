@@ -98,6 +98,46 @@ MENSAL_SQL = text("""
     ORDER BY m.mes
 """)
 
+# Acerto da IA: compara o que ela sugeriu com o que a equipe decidiu na triagem.
+# Só entram na taxa as sugestões já avaliadas. IS NOT DISTINCT FROM trata "sem categoria"
+# dos dois lados como acerto. ROLLUP gera a linha de total, somando as duas fontes.
+ACERTO_IA_SQL = text("""
+    WITH avaliacao AS (
+        SELECT p.fonte,
+               p.avaliado_em IS NOT NULL                                      AS avaliada,
+               (p.categoria_sugerida_id IS NOT DISTINCT FROM p.categoria_final_id)::int
+                                                                              AS acertou_categoria,
+               (p.prioridade_sugerida = p.prioridade_final)::int              AS acertou_prioridade
+        FROM ai_predictions p
+    )
+    SELECT GROUPING(fonte) = 1                                                  AS total,
+           COALESCE(fonte, 'todas')                                             AS fonte,
+           COUNT(*)                                                             AS sugestoes,
+           COUNT(*) FILTER (WHERE avaliada)                                     AS avaliadas,
+           ROUND(100.0 * AVG(acertou_categoria) FILTER (WHERE avaliada), 1)     AS pct_categoria,
+           ROUND(100.0 * AVG(acertou_prioridade) FILTER (WHERE avaliada), 1)    AS pct_prioridade,
+           ROUND(100.0 * AVG(acertou_categoria * acertou_prioridade)
+                 FILTER (WHERE avaliada), 1)                                    AS pct_ambos
+    FROM avaliacao
+    GROUP BY ROLLUP (fonte)
+    ORDER BY total, fonte
+""")
+
+# As trocas de categoria mais comuns na triagem: onde a IA mais erra.
+CORRECOES_IA_SQL = text("""
+    SELECT COALESCE(cs.nome, 'sem categoria') AS sugerida,
+           COALESCE(cf.nome, 'sem categoria') AS final,
+           COUNT(*)                           AS vezes
+    FROM ai_predictions p
+    LEFT JOIN categories cs ON cs.id = p.categoria_sugerida_id
+    LEFT JOIN categories cf ON cf.id = p.categoria_final_id
+    WHERE p.avaliado_em IS NOT NULL
+      AND p.categoria_sugerida_id IS DISTINCT FROM p.categoria_final_id
+    GROUP BY cs.nome, cf.nome
+    ORDER BY vezes DESC, sugerida, final
+    LIMIT :limite
+""")
+
 
 def _rows(db: Session, sql: Any, **params: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in db.execute(sql, params).mappings()]
@@ -122,3 +162,12 @@ def chamados_por_sala(db: Session) -> list[dict[str, Any]]:
 
 def chamados_por_mes(db: Session) -> list[dict[str, Any]]:
     return _rows(db, MENSAL_SQL, tz=settings.timezone)
+
+
+def acerto_ia(db: Session) -> dict[str, Any]:
+    rows = _rows(db, ACERTO_IA_SQL)
+    return {
+        "geral": next(r for r in rows if r["total"]),
+        "por_fonte": [r for r in rows if not r["total"]],
+        "correcoes": _rows(db, CORRECOES_IA_SQL, limite=5),
+    }
