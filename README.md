@@ -22,7 +22,7 @@ O HelpDesk TI organiza isso:
 | **V2 — Regras e relatórios** | Fluxo de status com histórico, permissões por papel em cada transição, relatórios SQL (CTE, ROLLUP, FILTER, window functions) | ✅ |
 | **V2 — Front** | Interface em React: chamados, abertura, detalhe com histórico, triagem e relatórios | ✅ |
 | **V3 — IA** | Triagem pelo Claude com classificador de reserva, métrica de acerto da IA no painel e seed com uma escola fictícia | ✅ |
-| **V3 — Deploy** | Imagem única (API + front) e blueprint do Render prontos; falta publicar | 🔜 |
+| **V3 — Deploy** | Imagem única (API + front) publicada no Render, com o Postgres no Neon: [helpdesk-ti-2eaa.onrender.com](https://helpdesk-ti-2eaa.onrender.com) | ✅ |
 
 ### Papéis
 
@@ -244,7 +244,11 @@ Para publicar, há uma imagem única ([`Dockerfile.deploy`](Dockerfile.deploy)):
 | `ANTHROPIC_API_KEY` | não | Liga a triagem pelo Claude; sem ela, usa as regras |
 | `TRIAGE_MODEL` | não | Modelo da triagem (padrão `claude-opus-5-5`) |
 
-**Render:** o [`render.yaml`](render.yaml) cria o serviço web e o Postgres. Em render.com, vá em **New → Blueprint**, escolha o repositório e preencha `DEMO_PASSWORD` (e, se quiser, `ANTHROPIC_API_KEY`).
+**Render + Neon:** o site roda no Render e o Postgres no [Neon](https://neon.com), porque o Postgres grátis do Render vence em 30 dias e o do Neon não.
+
+1. No Neon, crie um projeto e copie a URL de conexão **direta** (sem *connection pooling*: as migrações não combinam com o pooler).
+2. Em render.com, vá em **New → Blueprint** e escolha o repositório. O [`render.yaml`](render.yaml) cria o serviço web.
+3. Preencha `DATABASE_URL` (a URL do Neon), `DEMO_PASSWORD` e, se quiser, `ANTHROPIC_API_KEY`.
 
 > Numa demo pública com a chave da API ligada, cada chamado aberto gera uma chamada paga ao modelo. Defina um limite de gastos no Console da Anthropic, ou deixe a demo só com o classificador de regras.
 
@@ -325,5 +329,5 @@ frontend/
   nginx.conf       # serve o build e repassa /api para a API
 scripts/start.sh   # subida no deploy: migrações, seed e servidor
 Dockerfile.deploy  # imagem única para deploy público
-render.yaml        # blueprint do Render (serviço web + Postgres)
+render.yaml        # blueprint do Render (serviço web; o Postgres fica no Neon)
 ```
