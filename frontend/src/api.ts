@@ -1,4 +1,5 @@
 import type {
+  AcertoIAReport,
   Category,
   ChamadosPorMes,
   ChamadosPorSala,
@@ -128,5 +129,6 @@ export const api = {
     equipamentos: () => request<EquipamentoRanking[]>("/reports/equipamentos"),
     salas: () => request<ChamadosPorSala[]>("/reports/salas"),
     mensal: () => request<ChamadosPorMes[]>("/reports/mensal"),
+    ia: () => request<AcertoIAReport>("/reports/ia"),
   },
 };

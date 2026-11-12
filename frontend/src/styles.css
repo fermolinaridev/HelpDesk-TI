@@ -1153,6 +1153,144 @@ textarea {
   border-radius: 3px;
 }
 
+/* ---------- Triagem por IA ---------- */
+
+.ia-analisando {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.92rem;
+  color: var(--tinta-2);
+  background: var(--papel);
+  border-radius: var(--raio-pequeno);
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.ia-pulso {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lousa);
+  animation: pulso 1.2s ease-in-out infinite;
+}
+
+@keyframes pulso {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+
+.ia-card {
+  border: 1px solid var(--etiqueta-borda);
+  background: var(--etiqueta);
+  border-radius: var(--raio-pequeno);
+  padding: 0.85rem 0.9rem;
+  margin-bottom: 1.1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ia-fonte {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #5c4500;
+}
+
+.ia-valores {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.ia-motivo {
+  font-size: 0.9rem;
+  color: var(--tinta);
+}
+
+.btn-ia {
+  min-height: 38px;
+  background: var(--superficie);
+  border-color: var(--etiqueta-borda);
+}
+
+.report-wide {
+  grid-column: 1 / -1;
+}
+
+.ia-report {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.ia-taxas {
+  margin: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.ia-taxas div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.ia-taxas dt {
+  font-size: 0.88rem;
+  color: var(--tinta-2);
+}
+
+.ia-taxas dd {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--lousa);
+  font-variant-numeric: tabular-nums;
+}
+
+.ia-sub {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin-bottom: 0.6rem;
+}
+
+.ia-correcoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ia-correcoes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--linha);
+  font-size: 0.92rem;
+}
+
+.ia-correcoes li:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 1000px) {
+  .ia-report {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ia-taxas {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 /* ---------- Login ---------- */
 
 .login-page {
@@ -1464,5 +1602,6 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
+    animation: none !important;
   }
 }

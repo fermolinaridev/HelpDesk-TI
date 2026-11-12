@@ -15,14 +15,27 @@ import {
   eventoLabel,
   formatDateTime,
 } from "../labels";
-import type { Prioridade, Status, TicketDetail, TicketUpdate } from "../types";
+import type { Prioridade, Status, SugestaoIA, TicketDetail, TicketUpdate } from "../types";
+
+/** Por quanto tempo depois da abertura vale esperar a sugestão da IA. */
+const ANALISE_MS = 90_000;
 
 export default function TicketDetailPage() {
   const id = Number(useParams().id);
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const ticket = useQuery({ queryKey: ["ticket", id], queryFn: () => api.ticket(id) });
+  const staff = isStaff(user);
+  const ticket = useQuery({
+    queryKey: ["ticket", id],
+    queryFn: () => api.ticket(id),
+    // A IA analisa o chamado logo depois da abertura: a equipe vê a sugestão chegar.
+    refetchInterval: (query) => {
+      const t = query.state.data;
+      if (!staff || !t || t.sugestao_ia) return false;
+      return Date.now() - new Date(t.criado_em).getTime() < ANALISE_MS ? 2000 : false;
+    },
+  });
   const events = useQuery({ queryKey: ["events", id], queryFn: () => api.events(id) });
 
   // Depois de uma mudança, a API devolve o chamado atualizado: usamos direto no cache.
@@ -51,7 +64,7 @@ export default function TicketDetailPage() {
   }
 
   const t = ticket.data;
-  const mostrarTriagem = isStaff(user) && t.status !== "fechado";
+  const mostrarTriagem = staff && t.status !== "fechado";
 
   return (
     <>
@@ -206,10 +219,31 @@ function TriageForm({
   }
 
   const toId = (value: string) => (value ? Number(value) : null);
+  const sugestao = ticket.sugestao_ia;
+  const analisando =
+    !sugestao && Date.now() - new Date(ticket.criado_em).getTime() < ANALISE_MS;
 
   return (
     <form className="panel" onSubmit={handleSubmit}>
       <h2 className="panel-title">Triagem</h2>
+      {analisando && (
+        <p className="ia-analisando" role="status">
+          <span className="ia-pulso" aria-hidden />A IA está analisando o chamado…
+        </p>
+      )}
+      {sugestao && (
+        <SugestaoCard
+          sugestao={sugestao}
+          aplicada={
+            prioridade === sugestao.prioridade_sugerida &&
+            categoryId === (sugestao.categoria_sugerida?.id ?? null)
+          }
+          onUsar={() => {
+            setPrioridade(sugestao.prioridade_sugerida);
+            setCategoryId(sugestao.categoria_sugerida?.id ?? null);
+          }}
+        />
+      )}
       <label className="field">
         <span>Prioridade</span>
         <select value={prioridade} onChange={(e) => setPrioridade(e.target.value as Prioridade)}>
@@ -247,5 +281,34 @@ function TriageForm({
         {salvar.isPending ? "Salvando…" : "Salvar triagem"}
       </button>
     </form>
+  );
+}
+
+function SugestaoCard({
+  sugestao,
+  aplicada,
+  onUsar,
+}: {
+  sugestao: SugestaoIA;
+  aplicada: boolean;
+  onUsar: () => void;
+}) {
+  const doModelo = sugestao.fonte === "llm";
+  return (
+    <section className="ia-card" aria-label="Sugestão da IA">
+      <p className="ia-fonte">
+        {doModelo
+          ? "Sugestão da IA"
+          : "Sugestão automática por palavras-chave (IA indisponível)"}
+      </p>
+      <div className="ia-valores">
+        <span>{sugestao.categoria_sugerida?.nome ?? "Sem categoria"}</span>
+        <PrioridadeBadge prioridade={sugestao.prioridade_sugerida} />
+      </div>
+      <p className="ia-motivo">{sugestao.justificativa}</p>
+      <button type="button" className="btn btn-ia" onClick={onUsar} disabled={aplicada}>
+        {aplicada ? "Sugestão aplicada" : "Usar sugestão"}
+      </button>
+    </section>
   );
 }

@@ -58,8 +58,20 @@ export interface Transicao {
   exige_comentario: boolean;
 }
 
+export interface SugestaoIA {
+  fonte: "llm" | "regras";
+  modelo: string | null;
+  categoria_sugerida: Category | null;
+  prioridade_sugerida: Prioridade;
+  justificativa: string;
+  criado_em: string;
+  avaliado_em: string | null;
+}
+
 export interface TicketDetail extends Ticket {
   transicoes: Transicao[];
+  /** null enquanto a IA analisa o chamado, ou para o solicitante. */
+  sugestao_ia: SugestaoIA | null;
 }
 
 export interface TicketEvent {
@@ -116,4 +128,19 @@ export interface ChamadosPorMes {
   chamados: number;
   variacao: number | null;
   acumulado: number;
+}
+
+export interface AcertoIA {
+  fonte: "llm" | "regras" | "todas";
+  sugestoes: number;
+  avaliadas: number;
+  pct_categoria: number | null;
+  pct_prioridade: number | null;
+  pct_ambos: number | null;
+}
+
+export interface AcertoIAReport {
+  geral: AcertoIA;
+  por_fonte: AcertoIA[];
+  correcoes: { sugerida: string; final: string; vezes: number }[];
 }

@@ -5,6 +5,7 @@ import { api } from "../api";
 import { AssetTag } from "../components/Badges";
 import Bar from "../components/Bar";
 import { formatHoras, formatMes, formatPct } from "../labels";
+import type { AcertoIAReport } from "../types";
 
 function ReportCard({
   title,
@@ -31,6 +32,7 @@ export default function ReportsPage() {
   const equip = useQuery({ queryKey: ["report", "equip"], queryFn: api.reports.equipamentos });
   const salas = useQuery({ queryKey: ["report", "salas"], queryFn: api.reports.salas });
   const mensal = useQuery({ queryKey: ["report", "mensal"], queryFn: api.reports.mensal });
+  const ia = useQuery({ queryKey: ["report", "ia"], queryFn: api.reports.ia });
 
   const maxEquip = Math.max(0, ...(equip.data?.map((e) => e.chamados) ?? []));
   const maxSala = Math.max(0, ...(salas.data?.map((s) => s.chamados) ?? []));
@@ -69,6 +71,8 @@ export default function ReportsPage() {
       )}
 
       <div className="reports-grid">
+        {ia.data && <AcertoIAPanel dados={ia.data} />}
+
         <ReportCard
           title="Tempo de resolução por categoria"
           subtitle="Da abertura até a resolução definitiva (chamados reabertos contam a última)."
@@ -193,5 +197,84 @@ export default function ReportsPage() {
         </ReportCard>
       </div>
     </>
+  );
+}
+
+const FONTE_LABEL: Record<string, string> = {
+  llm: "IA (modelo de linguagem)",
+  regras: "Palavras-chave (reserva)",
+};
+
+function AcertoIAPanel({ dados }: { dados: AcertoIAReport }) {
+  const { geral } = dados;
+  return (
+    <section className="panel report report-wide">
+      <h2 className="panel-title">Acerto da triagem por IA</h2>
+      <p className="report-sub">
+        A IA sugere categoria e prioridade quando o chamado é aberto. A equipe confirma ou
+        corrige na triagem. {geral.avaliadas} de {geral.sugestoes} sugestões já foram avaliadas.
+      </p>
+      {geral.avaliadas === 0 ? (
+        <Vazio />
+      ) : (
+        <div className="ia-report">
+          <dl className="ia-taxas">
+            <div>
+              <dt>Categoria certa</dt>
+              <dd>{formatPct(geral.pct_categoria)}</dd>
+            </div>
+            <div>
+              <dt>Prioridade certa</dt>
+              <dd>{formatPct(geral.pct_prioridade)}</dd>
+            </div>
+            <div>
+              <dt>As duas certas</dt>
+              <dd>{formatPct(geral.pct_ambos)}</dd>
+            </div>
+          </dl>
+
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Quem sugeriu</th>
+                  <th className="num">Avaliadas</th>
+                  <th className="num">Categoria</th>
+                  <th className="num">Prioridade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dados.por_fonte.map((f) => (
+                  <tr key={f.fonte}>
+                    <td>{FONTE_LABEL[f.fonte] ?? f.fonte}</td>
+                    <td className="num">{f.avaliadas}</td>
+                    <td className="num">{formatPct(f.pct_categoria)}</td>
+                    <td className="num">{formatPct(f.pct_prioridade)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3 className="ia-sub">Correções mais comuns</h3>
+            {dados.correcoes.length === 0 ? (
+              <p className="muted">Nenhuma categoria foi corrigida até agora.</p>
+            ) : (
+              <ul className="ia-correcoes">
+                {dados.correcoes.map((c) => (
+                  <li key={`${c.sugerida}-${c.final}`}>
+                    <span>
+                      Sugeriu <strong>{c.sugerida}</strong>, era <strong>{c.final}</strong>
+                    </span>
+                    <span className="num">{c.vezes}×</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
